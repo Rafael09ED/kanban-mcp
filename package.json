@@ -1,0 +1,16 @@
+{
+  "name": "task-manager-mcp",
+  "version": "1.0.0",
+  "description": "Task Manager MCP Server with CRUD operations for tickets",
+  "type": "module",
+  "scripts": {
+    "build": "cd mcp-server && npm run build",
+    "dev": "cd mcp-server && npm run dev"
+  },
+  "keywords": ["mcp", "task-manager", "tickets", "crud"],
+  "author": "Task Manager Team",
+  "license": "MIT",
+  "workspaces": [
+    "mcp-server"
+  ]
+}
