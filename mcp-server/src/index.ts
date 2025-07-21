@@ -235,7 +235,7 @@ class TicketManager {
     return true;
   }
 
-  listTickets(projectId?: string, status?: string, dependsOn?: string): Ticket[] {
+  listTickets(projectId?: string, status?: string, dependsOn?: string, unblockedOnly?: boolean): Ticket[] {
     const storage = this.readData();
     let tickets = Object.values(storage.tickets);
 
@@ -249,6 +249,21 @@ class TicketManager {
 
     if (dependsOn) {
       tickets = tickets.filter(ticket => ticket.dependencies.includes(dependsOn));
+    }
+
+    if (unblockedOnly) {
+      tickets = tickets.filter(ticket => {
+        // No dependencies = unblocked
+        if (ticket.dependencies.length === 0) {
+          return true;
+        }
+        
+        // Check if all dependencies are closed
+        return ticket.dependencies.every(depId => {
+          const depTicket = storage.tickets[depId];
+          return depTicket && depTicket.status === 'closed';
+        });
+      });
     }
 
     // Sort by creation date, newest first
@@ -413,7 +428,7 @@ class TaskManagerServer {
         },
         {
           name: 'list_tickets',
-          description: 'List tickets with optional filtering by project, status, or dependencies',
+          description: 'List tickets with optional filtering by project, status, dependencies, or unblocked status',
           inputSchema: {
             type: 'object',
             properties: {
@@ -429,6 +444,10 @@ class TaskManagerServer {
               dependsOn: {
                 type: 'string',
                 description: 'Filter tickets that depend on a specific ticket ID'
+              },
+              unblockedOnly: {
+                type: 'boolean',
+                description: 'Filter to show only tickets that are not blocked by dependencies (tickets with no dependencies or all dependencies are closed)'
               }
             }
           }
@@ -545,9 +564,9 @@ class TaskManagerServer {
           }
 
           case 'list_tickets': {
-            const { projectId, status, dependsOn } = request.params.arguments as any;
+            const { projectId, status, dependsOn, unblockedOnly } = request.params.arguments as any;
             
-            const tickets = this.ticketManager.listTickets(projectId, status, dependsOn);
+            const tickets = this.ticketManager.listTickets(projectId, status, dependsOn, unblockedOnly);
             
             return {
               content: [
