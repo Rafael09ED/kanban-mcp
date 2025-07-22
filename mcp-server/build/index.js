@@ -78,7 +78,7 @@ class TicketManager {
             throw new McpError(ErrorCode.InvalidParams, 'Circular dependency detected');
         }
     }
-    createTicket(title, description, projectId, dependencies = []) {
+    createTicket(title, description, projects = [], dependencies = []) {
         const storage = this.readData();
         this.validateDependencies(dependencies, storage);
         const id = this.generateId(storage);
@@ -87,7 +87,7 @@ class TicketManager {
             id,
             title,
             description,
-            projectId,
+            projects,
             dependencies,
             createdAt: now,
             updatedAt: now,
@@ -115,7 +115,7 @@ class TicketManager {
                 id,
                 title: ticketData.title,
                 description: ticketData.description,
-                projectId: ticketData.projectId,
+                projects: ticketData.projects,
                 dependencies,
                 createdAt: now,
                 updatedAt: now,
@@ -137,24 +137,37 @@ class TicketManager {
         }
         return ticket;
     }
-    updateTicket(ticketId, updates) {
+    updateTickets(updates) {
         const storage = this.readData();
-        const ticket = storage.tickets[ticketId];
-        if (!ticket) {
-            throw new McpError(ErrorCode.InvalidParams, `Ticket ${ticketId} not found`);
+        const updatedTickets = [];
+        // Validate all tickets exist first
+        for (const update of updates) {
+            if (!storage.tickets[update.ticketId]) {
+                throw new McpError(ErrorCode.InvalidParams, `Ticket ${update.ticketId} not found`);
+            }
         }
-        if (updates.dependencies) {
-            this.validateDependencies(updates.dependencies, storage, ticketId);
-            this.checkCircularDependency(ticketId, updates.dependencies, storage);
+        // Validate dependencies and circular dependencies
+        for (const update of updates) {
+            if (update.dependencies) {
+                this.validateDependencies(update.dependencies, storage, update.ticketId);
+                this.checkCircularDependency(update.ticketId, update.dependencies, storage);
+            }
         }
-        const updatedTicket = {
-            ...ticket,
-            ...updates,
-            updatedAt: new Date().toISOString()
-        };
-        storage.tickets[ticketId] = updatedTicket;
+        // Apply all updates
+        const now = new Date().toISOString();
+        for (const update of updates) {
+            const { ticketId, ...updateFields } = update;
+            const ticket = storage.tickets[ticketId];
+            const updatedTicket = {
+                ...ticket,
+                ...updateFields,
+                updatedAt: now
+            };
+            storage.tickets[ticketId] = updatedTicket;
+            updatedTickets.push(updatedTicket);
+        }
         this.writeData(storage);
-        return updatedTicket;
+        return updatedTickets;
     }
     deleteTicket(ticketId) {
         const storage = this.readData();
@@ -169,11 +182,20 @@ class TicketManager {
         this.writeData(storage);
         return true;
     }
-    listTickets(projectId, status, dependsOn, unblockedOnly) {
+    listTickets(project, status, dependsOn, unblockedOnly) {
         const storage = this.readData();
         let tickets = Object.values(storage.tickets);
-        if (projectId) {
-            tickets = tickets.filter(ticket => ticket.projectId === projectId);
+        if (project) {
+            tickets = tickets.filter(ticket => {
+                // Handle backward compatibility: check both projects array and legacy projectId
+                if (ticket.projects) {
+                    return ticket.projects.some(p => p.toLowerCase() === project.toLowerCase());
+                }
+                else if (ticket.projectId) {
+                    return ticket.projectId.toLowerCase() === project.toLowerCase();
+                }
+                return false;
+            });
         }
         if (status) {
             tickets = tickets.filter(ticket => ticket.status === status);
@@ -241,9 +263,11 @@ class TaskManagerServer {
                                             type: 'string',
                                             description: 'The ticket description'
                                         },
-                                        projectId: {
-                                            type: 'string',
-                                            description: 'The project ID this ticket belongs to'
+                                        projects: {
+                                            type: 'array',
+                                            items: { type: 'string' },
+                                            description: 'Array of project names this ticket belongs to',
+                                            default: []
                                         },
                                         dependencies: {
                                             type: 'array',
@@ -252,27 +276,29 @@ class TaskManagerServer {
                                             default: []
                                         }
                                     },
-                                    required: ['title', 'description', 'projectId']
+                                    required: ['title', 'description']
                                 },
                                 description: 'Array of ticket objects to create',
                                 minItems: 1
                             },
                             title: {
                                 type: 'string',
-                                description: 'The ticket title (for single ticket creation - legacy support)'
+                                description: 'The ticket title (for single ticket creation)'
                             },
                             description: {
                                 type: 'string',
-                                description: 'The ticket description (for single ticket creation - legacy support)'
+                                description: 'The ticket description (for single ticket creation)'
                             },
-                            projectId: {
-                                type: 'string',
-                                description: 'The project ID this ticket belongs to (for single ticket creation - legacy support)'
+                            projects: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'Array of project names this ticket belongs to (for single ticket creation)',
+                                default: []
                             },
                             dependencies: {
                                 type: 'array',
                                 items: { type: 'string' },
-                                description: 'Array of ticket IDs this ticket depends on (for single ticket creation - legacy support)',
+                                description: 'Array of ticket IDs this ticket depends on (for single ticket creation)',
                                 default: []
                             }
                         },
@@ -281,7 +307,7 @@ class TaskManagerServer {
                                 required: ['tickets']
                             },
                             {
-                                required: ['title', 'description', 'projectId']
+                                required: ['title', 'description']
                             }
                         ]
                     }
@@ -302,34 +328,45 @@ class TaskManagerServer {
                 },
                 {
                     name: 'update_ticket',
-                    description: 'Update properties of an existing ticket',
+                    description: 'Update one or more tickets using an array of ticket update objects.',
                     inputSchema: {
                         type: 'object',
                         properties: {
-                            ticketId: {
-                                type: 'string',
-                                description: 'The ID of the ticket to update'
-                            },
-                            title: {
-                                type: 'string',
-                                description: 'New title for the ticket'
-                            },
-                            description: {
-                                type: 'string',
-                                description: 'New description for the ticket'
-                            },
-                            dependencies: {
+                            tickets: {
                                 type: 'array',
-                                items: { type: 'string' },
-                                description: 'New array of ticket IDs this ticket depends on'
-                            },
-                            status: {
-                                type: 'string',
-                                enum: ['open', 'in-progress', 'closed'],
-                                description: 'New status for the ticket'
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        ticketId: {
+                                            type: 'string',
+                                            description: 'The ID of the ticket to update'
+                                        },
+                                        title: {
+                                            type: 'string',
+                                            description: 'New title for the ticket'
+                                        },
+                                        description: {
+                                            type: 'string',
+                                            description: 'New description for the ticket'
+                                        },
+                                        dependencies: {
+                                            type: 'array',
+                                            items: { type: 'string' },
+                                            description: 'New array of ticket IDs this ticket depends on'
+                                        },
+                                        status: {
+                                            type: 'string',
+                                            enum: ['open', 'in-progress', 'closed'],
+                                            description: 'New status for the ticket'
+                                        }
+                                    },
+                                    required: ['ticketId']
+                                },
+                                minItems: 1,
+                                description: 'Array of ticket update objects'
                             }
                         },
-                        required: ['ticketId']
+                        required: ['tickets']
                     }
                 },
                 {
@@ -352,9 +389,9 @@ class TaskManagerServer {
                     inputSchema: {
                         type: 'object',
                         properties: {
-                            projectId: {
+                            project: {
                                 type: 'string',
-                                description: 'Filter tickets by project ID'
+                                description: 'Filter tickets by project name (case insensitive)'
                             },
                             status: {
                                 type: 'string',
@@ -383,8 +420,8 @@ class TaskManagerServer {
                         if (args.tickets && Array.isArray(args.tickets)) {
                             // Validate each ticket in the array
                             for (const ticketData of args.tickets) {
-                                if (!ticketData.title || !ticketData.description || !ticketData.projectId) {
-                                    throw new McpError(ErrorCode.InvalidParams, 'Each ticket must have title, description, and projectId');
+                                if (!ticketData.title || !ticketData.description) {
+                                    throw new McpError(ErrorCode.InvalidParams, 'Each ticket must have title and description');
                                 }
                             }
                             const tickets = this.ticketManager.createTickets(args.tickets);
@@ -397,13 +434,13 @@ class TaskManagerServer {
                                 ]
                             };
                         }
-                        // Legacy single ticket format
+                        // Single ticket format
                         else {
-                            const { title, description, projectId, dependencies = [] } = args;
-                            if (!title || !description || !projectId) {
-                                throw new McpError(ErrorCode.InvalidParams, 'Title, description, and projectId are required');
+                            const { title, description, projects = [], dependencies = [] } = args;
+                            if (!title || !description) {
+                                throw new McpError(ErrorCode.InvalidParams, 'Title and description are required');
                             }
-                            const ticket = this.ticketManager.createTicket(title, description, projectId, dependencies);
+                            const ticket = this.ticketManager.createTicket(title, description, projects, dependencies);
                             return {
                                 content: [
                                     {
@@ -430,19 +467,23 @@ class TaskManagerServer {
                         };
                     }
                     case 'update_ticket': {
-                        const { ticketId, ...updates } = request.params.arguments;
-                        if (!ticketId) {
-                            throw new McpError(ErrorCode.InvalidParams, 'ticketId is required');
+                        const args = request.params.arguments;
+                        const updates = args.tickets;
+                        if (!updates || !Array.isArray(updates) || updates.length === 0) {
+                            throw new McpError(ErrorCode.InvalidParams, 'tickets array is required and must not be empty');
                         }
-                        if (Object.keys(updates).length === 0) {
-                            throw new McpError(ErrorCode.InvalidParams, 'At least one field to update is required');
+                        // Validate each update has ticketId
+                        for (const update of updates) {
+                            if (!update.ticketId) {
+                                throw new McpError(ErrorCode.InvalidParams, 'Each update must have a ticketId');
+                            }
                         }
-                        const ticket = this.ticketManager.updateTicket(ticketId, updates);
+                        const tickets = this.ticketManager.updateTickets(updates);
                         return {
                             content: [
                                 {
                                     type: 'text',
-                                    text: `Ticket updated successfully!\n\n${JSON.stringify(ticket, null, 2)}`
+                                    text: `${tickets.length} ticket(s) updated successfully!\n\n${JSON.stringify(tickets, null, 2)}`
                                 }
                             ]
                         };
@@ -463,8 +504,8 @@ class TaskManagerServer {
                         };
                     }
                     case 'list_tickets': {
-                        const { projectId, status, dependsOn, unblockedOnly } = request.params.arguments;
-                        const tickets = this.ticketManager.listTickets(projectId, status, dependsOn, unblockedOnly);
+                        const { project, status, dependsOn, unblockedOnly } = request.params.arguments;
+                        const tickets = this.ticketManager.listTickets(project, status, dependsOn, unblockedOnly);
                         return {
                             content: [
                                 {
