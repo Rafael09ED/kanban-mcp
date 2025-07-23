@@ -1,7 +1,7 @@
 {
-  "name": "task-manager-mcp-server",
+  "name": "kanban-mcp-server",
   "version": "1.0.0",
-  "description": "MCP Server for Task Manager with CRUD operations for tickets",
+  "description": "MCP Server for Kanban with CRUD operations for tickets",
   "type": "module",
   "main": "build/index.js",
   "scripts": {
@@ -17,6 +17,6 @@
     "typescript": "^5.0.0"
   },
   "bin": {
-    "task-manager-mcp-server": "build/index.js"
+    "kanban-mcp-server": "build/index.js"
   }
 }

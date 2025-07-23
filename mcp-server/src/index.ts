@@ -14,8 +14,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Get the data directory path relative to the build output
-const DATA_FILE = join(__dirname, '../../data/tickets.json');
+// Get the data directory path relative to the build output, or use environment variable for testing
+const DATA_FILE = process.env.DATA_FILE || join(__dirname, '../../data/tickets.json');
 
 interface Ticket {
   id: string;
@@ -249,7 +249,7 @@ class TicketManager {
     return true;
   }
 
-  listTickets(project?: string, status?: string, dependsOn?: string, unblockedOnly?: boolean): Ticket[] {
+  listTickets(project?: string, status?: string, dependsOn?: string): Ticket[] {
     const storage = this.readData();
     let tickets = Object.values(storage.tickets);
 
@@ -273,34 +273,98 @@ class TicketManager {
       tickets = tickets.filter(ticket => ticket.dependencies.includes(dependsOn));
     }
 
-    if (unblockedOnly) {
+    // Sort by creation date, newest first
+    return tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  private buildResearchTree(
+    ticketId: string, 
+    storage: TicketStorage, 
+    visitedIds: Set<string> = new Set()
+  ): Array<{id: string, title: string, unblocks: any[]}> {
+    // Check if we've already processed this ticket in this path
+    if (visitedIds.has(ticketId)) {
+      return []; // Stop recursion to prevent loop
+    }
+    
+    // Add current ticket to visited set for this path
+    visitedIds.add(ticketId);
+    
+    // Find direct dependents (tickets that depend on ticketId) - exclude closed tickets
+    const dependents = Object.values(storage.tickets).filter(ticket => 
+      ticket.dependencies.includes(ticketId) && ticket.status !== 'closed'
+    );
+    
+    // Build tree nodes for each dependent
+    const treeNodes = dependents.map(dependent => ({
+      id: dependent.id,
+      title: dependent.title,
+      unblocks: this.buildResearchTree(dependent.id, storage, new Set(visitedIds))
+    }));
+    
+    // Remove from visited set as we backtrack (for other branches)
+    visitedIds.delete(ticketId);
+    
+    return treeNodes;
+  }
+
+  nextTickets(project?: string): Array<Omit<Ticket, 'dependencies'> & {researchTree: Array<{id: string, title: string, unblocks: any[]}>}> {
+    const storage = this.readData();
+    let tickets = Object.values(storage.tickets);
+
+    // Filter to show only unblocked tickets - always exclude closed tickets
+    tickets = tickets.filter(ticket => {
+      // Always exclude closed tickets
+      if (ticket.status === 'closed') {
+        return false;
+      }
+      
+      // No dependencies = unblocked
+      if (ticket.dependencies.length === 0) {
+        return true;
+      }
+      
+      // Check if all dependencies are closed
+      return ticket.dependencies.every(depId => {
+        const depTicket = storage.tickets[depId];
+        return depTicket && depTicket.status === 'closed';
+      });
+    });
+
+    if (project) {
       tickets = tickets.filter(ticket => {
-        // No dependencies = unblocked
-        if (ticket.dependencies.length === 0) {
-          return true;
+        // Handle backward compatibility: check both projects array and legacy projectId
+        if (ticket.projects) {
+          return ticket.projects.some(p => p.toLowerCase() === project.toLowerCase());
+        } else if ((ticket as any).projectId) {
+          return (ticket as any).projectId.toLowerCase() === project.toLowerCase();
         }
-        
-        // Check if all dependencies are closed
-        return ticket.dependencies.every(depId => {
-          const depTicket = storage.tickets[depId];
-          return depTicket && depTicket.status === 'closed';
-        });
+        return false;
       });
     }
 
     // Sort by creation date, newest first
-    return tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sortedTickets = tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    // Add research tree to each ticket and exclude dependencies field
+    return sortedTickets.map(ticket => {
+      const { dependencies, ...ticketWithoutDeps } = ticket;
+      return {
+        ...ticketWithoutDeps,
+        researchTree: this.buildResearchTree(ticket.id, storage)
+      };
+    });
   }
 }
 
-class TaskManagerServer {
+class KanbanServer {
   private server: Server;
   private ticketManager: TicketManager;
 
   constructor() {
     this.server = new Server(
       {
-        name: 'task-manager-mcp-server',
+        name: 'kanban-mcp-server',
         version: '1.0.0',
       },
       {
@@ -465,7 +529,7 @@ class TaskManagerServer {
         },
         {
           name: 'list_tickets',
-          description: 'List tickets with optional filtering by project, status, dependencies, or unblocked status',
+          description: 'List tickets with optional filtering by project, status, or dependencies',
           inputSchema: {
             type: 'object',
             properties: {
@@ -481,10 +545,19 @@ class TaskManagerServer {
               dependsOn: {
                 type: 'string',
                 description: 'Filter tickets that depend on a specific ticket ID'
-              },
-              unblockedOnly: {
-                type: 'boolean',
-                description: 'Filter to show only tickets that are not blocked by dependencies (tickets with no dependencies or all dependencies are closed)'
+              }
+            }
+          }
+        },
+        {
+          name: 'next_tickets',
+          description: 'Get next tickets to work on - shows only unblocked tickets (tickets with no dependencies or all dependencies are closed). Only shows open and in-progress tickets. Each ticket includes a researchTree showing the full cascade of work that would be unlocked by completing it.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project: {
+                type: 'string',
+                description: 'Filter tickets by project name (case insensitive)'
               }
             }
           }
@@ -605,15 +678,30 @@ class TaskManagerServer {
           }
 
           case 'list_tickets': {
-            const { project, status, dependsOn, unblockedOnly } = request.params.arguments as any;
+            const { project, status, dependsOn } = request.params.arguments as any;
             
-            const tickets = this.ticketManager.listTickets(project, status, dependsOn, unblockedOnly);
+            const tickets = this.ticketManager.listTickets(project, status, dependsOn);
             
             return {
               content: [
                 {
                   type: 'text',
                   text: `Found ${tickets.length} tickets:\n\n${JSON.stringify(tickets, null, 2)}`
+                }
+              ]
+            };
+          }
+
+          case 'next_tickets': {
+            const { project } = request.params.arguments as any;
+            
+            const tickets = this.ticketManager.nextTickets(project);
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Found ${tickets.length} next tickets to work on:\n\n${JSON.stringify(tickets, null, 2)}`
                 }
               ]
             };
@@ -651,9 +739,9 @@ class TaskManagerServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Task Manager MCP server running on stdio');
+    console.error('Kanban MCP server running on stdio');
   }
 }
 
-const server = new TaskManagerServer();
+const server = new KanbanServer();
 server.run().catch(console.error);

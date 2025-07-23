@@ -1,4 +1,4 @@
-# Task Manager MCP
+# Kanban MCP
 
 A Model Context Protocol (MCP) server that provides CRUD operations for task/ticket management with dependency tracking.
 
@@ -15,7 +15,7 @@ A Model Context Protocol (MCP) server that provides CRUD operations for task/tic
 ## Project Structure
 
 ```
-task-manager-mcp/
+kanban-mcp/
 ├── mcp-server/           # MCP server implementation
 │   ├── src/
 │   │   └── index.ts      # Main server code
