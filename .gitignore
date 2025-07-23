@@ -35,5 +35,10 @@ logs
 ehthumbs.db
 Thumbs.db
 
+# Map files
+*.map
+*.js.map
+*.d.ts.map
+
 # Data files
 data/tickets.json

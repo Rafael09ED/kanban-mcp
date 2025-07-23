@@ -1,125 +1,92 @@
 # Kanban MCP
 
-A Model Context Protocol (MCP) server that provides CRUD operations for task/ticket management with dependency tracking.
+MCP server for task/ticket management with dependency tracking.
+
+## Install
+
+```bash
+git clone https://github.com/Rafael09ED/kanban-mcp.git
+cd kanban-mcp
+npm install
+npm run build
+```
+
+## Setup
+
+Add to your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "kanban-mcp": {
+      "command": "node",
+      "args": ["/path/to/kanban-mcp/mcp-server/build/index.js"]
+    }
+  }
+}
+```
 
 ## Features
 
-- **Create Tickets**: Create new tickets with title, description, project ID, and dependencies
-- **Read Tickets**: Retrieve individual ticket details by ID
-- **Update Tickets**: Modify ticket properties (title, description, dependencies, status)
-- **Delete Tickets**: Remove tickets safely from the system
-- **List Tickets**: Query tickets with filtering by project, status, or dependencies
-- **Dependency Management**: Track ticket dependencies with circular dependency detection
-- **Status Tracking**: Track ticket status (open, in-progress, closed)
+- CRUD operations for tickets
+- Dependency tracking
+- Status management (open, in-progress, closed)
+- Project-based filtering
+- Persistent JSON storage
 
-## Project Structure
-
-```
-kanban-mcp/
-├── mcp-server/           # MCP server implementation
-│   ├── src/
-│   │   └── index.ts      # Main server code
-│   ├── build/            # Compiled JavaScript output
-│   ├── package.json
-│   └── tsconfig.json
-├── data/                 # Persistent storage
-│   └── tickets.json      # Ticket database
-├── package.json          # Root package.json for monorepo
-└── README.md
-```
-
-## Available MCP Tools
+## Tools
 
 ### create_ticket
-Create one or more tickets with validation and dependency checking. Supports both single ticket creation and batch creation.
+Create tickets individually or in batches.
 
-**Single Ticket Format (Legacy):**
-- `title` (required): The ticket title
-- `description` (required): The ticket description  
-- `projectId` (required): The project ID this ticket belongs to
-- `dependencies` (optional): Array of ticket IDs this ticket depends on
+Parameters:
+- `title` (required): Ticket title
+- `description` (required): Ticket description
+- `projects` (optional): Array of project names
+- `dependencies` (optional): Array of ticket IDs
 
-**Batch Creation Format:**
-- `tickets` (required): Array of ticket objects to create
-  - Each ticket object contains: `title`, `description`, `projectId`, `dependencies` (optional)
-
-**Examples:**
-```javascript
-// Single ticket
-{
-  "title": "Fix login bug",
-  "description": "Resolve authentication issue",
-  "projectId": "web-app"
-}
-
-// Multiple tickets
-{
-  "tickets": [
-    {
-      "title": "Setup database",
-      "description": "Initialize database schema",
-      "projectId": "web-app"
-    },
-    {
-      "title": "Implement auth",
-      "description": "Add user authentication",
-      "projectId": "web-app",
-      "dependencies": ["TICKET-0001"]
-    }
-  ]
-}
-```
+Batch format:
+- `tickets` (required): Array of ticket objects
 
 ### read_ticket
-Get details of a specific ticket by ID.
+Get ticket details by ID.
 
-**Parameters:**
-- `ticketId` (required): The ID of the ticket to retrieve
+Parameters:
+- `ticketId` (required): Ticket ID
 
 ### update_ticket
-Update properties of an existing ticket.
+Update ticket properties.
 
-**Parameters:**
-- `ticketId` (required): The ID of the ticket to update
-- `title` (optional): New title for the ticket
-- `description` (optional): New description for the ticket
-- `dependencies` (optional): New array of ticket IDs this ticket depends on
-- `status` (optional): New status ('open', 'in-progress', 'closed')
+Parameters:
+- `tickets` (required): Array of update objects with `ticketId` and fields to update
 
 ### delete_ticket
-Delete a ticket from the system.
+Delete ticket by ID.
 
-**Parameters:**
-- `ticketId` (required): The ID of the ticket to delete
+Parameters:
+- `ticketId` (required): Ticket ID
 
 ### list_tickets
-List tickets with optional filtering.
+List tickets with optional filters.
 
-**Parameters:**
-- `projectId` (optional): Filter tickets by project ID
-- `status` (optional): Filter tickets by status ('open', 'in-progress', 'closed')
-- `dependsOn` (optional): Filter tickets that depend on a specific ticket ID
+Parameters:
+- `project` (optional): Filter by project name
+- `status` (optional): Filter by status
+- `dependsOn` (optional): Filter by dependency
+
+### next_tickets
+Get unblocked tickets ready for work. Shows impact cascade.
+
+Parameters:
+- `project` (optional): Filter by project name
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the MCP server
-npm run build
-
-# Start development mode (watch for changes)
-npm run dev
+npm run dev    # Watch mode
+npm run build  # Compile
 ```
 
-## Usage with Cline
+## License
 
-The MCP server is automatically configured for use with Cline. You can now use commands like:
-
-- "Create a ticket for implementing user authentication in the web-app project"
-- "Show me all open tickets for the mobile-app project"
-- "Update ticket TICKET-0001 to mark it as in-progress"
-- "List all tickets that depend on TICKET-0001"
-
-The server provides persistent storage in JSON format and includes robust validation, dependency management, and error handling.
+AGPLv3

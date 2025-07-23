@@ -3,12 +3,31 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Validate and sanitize the DATA_FILE path
+function validateDataFilePath(filePath) {
+    const resolvedPath = resolve(filePath);
+    // Ensure the path is within allowed directories (project root or its subdirectories)
+    const projectRoot = resolve(__dirname, '../..');
+    const relativePath = relative(projectRoot, resolvedPath);
+    // Check for path traversal attempts
+    if (relativePath.startsWith('..') || relativePath.includes('..')) {
+        throw new Error(`Invalid DATA_FILE path: Path traversal not allowed. Path: ${filePath}`);
+    }
+    // Ensure it's a .json file
+    if (!resolvedPath.endsWith('.json')) {
+        throw new Error(`Invalid DATA_FILE path: Must be a .json file. Path: ${filePath}`);
+    }
+    return resolvedPath;
+}
 // Get the data directory path relative to the build output, or use environment variable for testing
-const DATA_FILE = process.env.DATA_FILE || join(__dirname, '../../data/tickets.json');
+const DEFAULT_DATA_FILE = join(__dirname, '../../data/tickets.json');
+const DATA_FILE = process.env.DATA_FILE
+    ? validateDataFilePath(process.env.DATA_FILE)
+    : validateDataFilePath(DEFAULT_DATA_FILE);
 class TicketManager {
     dataFile;
     constructor(dataFile) {
