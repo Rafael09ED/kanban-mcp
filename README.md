@@ -33,6 +33,9 @@ Add to your MCP client configuration:
 - Status management (open, in-progress, closed)
 - Project-based filtering
 - Persistent JSON storage
+- **Automatic data migrations** with version detection and path-finding
+- Research impact trees showing cascade effects of completing tickets
+
 
 ## Tools
 

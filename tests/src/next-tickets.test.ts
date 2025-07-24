@@ -67,7 +67,7 @@ describe('Next Tickets API', () => {
         arguments: {
           title: 'Blocked Ticket',
           description: 'Depends on other ticket',
-          dependencies: [dependencyId]
+          blockedBy: [dependencyId]
         }
       });
 
@@ -110,7 +110,7 @@ describe('Next Tickets API', () => {
         arguments: {
           title: 'Now Unblocked Ticket',
           description: 'Dependency is closed',
-          dependencies: [dependencyId]
+          blockedBy: [dependencyId]
         }
       });
 
@@ -238,7 +238,7 @@ describe('Next Tickets API', () => {
         arguments: {
           title: 'Dependent Task 1',
           description: 'Depends on foundation',
-          dependencies: [foundationId]
+          blockedBy: [foundationId]
         }
       });
 
@@ -247,7 +247,7 @@ describe('Next Tickets API', () => {
         arguments: {
           title: 'Dependent Task 2',
           description: 'Also depends on foundation',
-          dependencies: [foundationId]
+          blockedBy: [foundationId]
         }
       });
 
@@ -263,7 +263,7 @@ describe('Next Tickets API', () => {
       expect(tickets[0].title).toBe('Foundation Task');
       expect(tickets[0].researchTree).toBeDefined();
       expect(tickets[0].researchTree.length).toBe(2); // Two dependent tickets
-      expect(tickets[0].dependencies).toBeUndefined(); // Dependencies field should be excluded
+      expect(tickets[0].blockedBy).toBeUndefined(); // blockedBy field should be excluded
     });
   });
 });

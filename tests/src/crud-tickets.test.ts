@@ -189,18 +189,18 @@ describe('CRUD Tickets API', () => {
       await client.callTool({
         name: 'create_ticket',
         arguments: {
-          title: 'Ticket 1',
-          description: 'Description 1',
-          projects: ['project-a']
+          title: 'Test Ticket',
+          description: 'Test Description'
         }
       });
 
       await client.callTool({
         name: 'create_ticket',
         arguments: {
-          title: 'Ticket 2',
-          description: 'Description 2',
-          projects: ['project-b']
+          tickets: [
+            { title: 'Ticket 1', description: 'Description 1' },
+            { title: 'Ticket 2', description: 'Description 2' }
+          ]
         }
       });
 
@@ -209,7 +209,7 @@ describe('CRUD Tickets API', () => {
         arguments: {}
       });
 
-      expect(result.content[0].text).toContain('Found 2 tickets');
+      expect(result.content[0].text).toContain('Found 3 tickets');
     });
 
     it('should filter by project', async () => {

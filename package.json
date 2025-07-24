@@ -1,6 +1,6 @@
 {
   "name": "kanban-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Kanban MCP Server with CRUD operations for tickets",
   "type": "module",
   "scripts": {
